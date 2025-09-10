@@ -1,126 +1,87 @@
-
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8" />
-    <title>Bagalkot Navigation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-    <style>
-        #map {
-            height: 100vh;
-            width: 100%;
-        }
-        #instructions {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: white;
-            padding: 10px;
-            z-index: 1000;
-            max-width: 300px;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            border-radius: 5px;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <title>Bagalkot Navigation – MapmyIndia Hybrid</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Load MapmyIndia Interactive Maps API -->
+  <script src="https://apis.mapmyindia.com/advancedmaps/v1/a0c009c001123e82338fdc26957f3a6b/map_load?v=1.5"></script>
+  <style>
+    #map { height: 100vh; width: 100%; }
+    #instructions {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      z-index: 1000;
+      max-width: 300px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      border-radius: 5px;
+    }
+  </style>
 </head>
 <body>
-
-<div id="map"></div>
-<div id="instructions">Navigation instructions will appear here.</div>
+  <div id="map"></div>
+  <div id="instructions">Navigation instructions will appear here.</div>
 
 <script>
-    var map = L.map('map').fitWorld();
+  // Initialize MapmyIndia map in Hybrid view
+  var map = new MapmyIndia.Map('map', {
+    center: [15.9553, 75.6549],  // Default center (Bagalkot)
+    zoom: 14,
+    hybrid: true  // Activates satellite + labels hybrid view
+  });
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
+  var driverMarker, routePolyline, upcomingSegment;
+  var routeCoords = [];
 
-    var driverMarker;
-    var routeCoords = [];
-    var routePolyline;
-    var upcomingSegment;
-    var startMarkerPlaced = false;
+  // Load your CPP-generated route
+  fetch('bagalkot_cpp_route.json')
+    .then(res => res.json())
+    .then(data => {
+      routeCoords = data.map(c => [c[0], c[1]]);
+      routePolyline = L.polyline(routeCoords, {color: 'blue', weight: 5}).addTo(map);
+      map.fitBounds(routePolyline.getBounds());
+      L.marker(routeCoords[routeCoords.length - 1]).addTo(map).bindPopup("Destination");
+    })
+    .catch(err => console.error("Error loading CPP route:", err));
 
-    // Load CPP route
-    fetch('bagalkot_cpp_route.json')
-        .then(response => response.json())
-        .then(data => {
-            routeCoords = data.map(c => [c[0], c[1]]);
-            routePolyline = L.polyline(routeCoords, {color: 'blue'}).addTo(map);
-            map.fitBounds(routePolyline.getBounds());
-
-            // Only End marker (Start will be driver’s current location)
-            L.marker(routeCoords[routeCoords.length - 1])
-                .addTo(map)
-                .bindPopup("End");
-        })
-        .catch(err => console.error("Error loading CPP route:", err));
-
-    // Track driver location
-    function onLocationFound(e) {
-        var driverLatLng = e.latlng;
-
-        if (!driverMarker) {
-            driverMarker = L.marker(driverLatLng).addTo(map)
-                .bindPopup("You are here").openPopup();
-
-            // Place Start marker only once (at driver’s first detected location)
-            if (!startMarkerPlaced) {
-                L.marker(driverLatLng).addTo(map).bindPopup("Start").openPopup();
-                startMarkerPlaced = true;
-            }
-        } else {
-            driverMarker.setLatLng(driverLatLng);
-        }
-
-        // Auto-pan map
-        map.setView(driverLatLng, map.getZoom(), {animate: true});
-
-        updateNavigation(driverLatLng);
+  // Driver location tracking
+  function onLocationFound(e) {
+    var loc = e.latlng;
+    if (!driverMarker) {
+      driverMarker = L.marker(loc).addTo(map).bindPopup("You are here").openPopup();
+    } else {
+      driverMarker.setLatLng(loc);
     }
+    map.setView(loc, map.getZoom(), {animate: true});
+    updateNavigation(loc);
+  }
 
-    function onLocationError(e) {
-        alert("Unable to access your location. Please allow GPS.");
-    }
+  function onLocationError() {
+    alert("Please enable location/GPS permissions to use navigation.");
+  }
 
-    map.on('locationfound', onLocationFound);
-    map.on('locationerror', onLocationError);
+  map.on('locationfound', onLocationFound);
+  map.on('locationerror', onLocationError);
 
-    map.locate({setView: true, maxZoom: 18, watch: true, enableHighAccuracy: true});
+  map.locate({setView: true, maxZoom: 18, watch: true, enableHighAccuracy: true});
 
-    // Update navigation instructions based on current location
-    function updateNavigation(driverLatLng) {
-        if (!routeCoords.length) return;
-
-        let minDist = Infinity;
-        let closestIndex = 0;
-
-        routeCoords.forEach((coord, idx) => {
-            let dist = map.distance(driverLatLng, coord);
-            if (dist < minDist) {
-                minDist = dist;
-                closestIndex = idx;
-            }
-        });
-
-        // Highlight upcoming route segment (next 5 points)
-        let segment = routeCoords.slice(closestIndex, closestIndex + 5);
-        if (upcomingSegment) map.removeLayer(upcomingSegment);
-        upcomingSegment = L.polyline(segment, {color: 'green', weight: 6}).addTo(map);
-
-        // Update instructions
-        let instructionsDiv = document.getElementById('instructions');
-        instructionsDiv.innerHTML = `Approaching road segment ${closestIndex + 1} of ${routeCoords.length}`;
-    }
+  function updateNavigation(loc) {
+    if (!routeCoords.length) return;
+    let minD = Infinity, idx = 0;
+    routeCoords.forEach((pt, i) => {
+      let d = map.distance(loc, pt);
+      if (d < minD) { minD = d; idx = i; }
+    });
+    let seg = routeCoords.slice(idx, idx + 5);
+    if (upcomingSegment) map.removeLayer(upcomingSegment);
+    upcomingSegment = L.polyline(seg, {color: 'green', weight: 6}).addTo(map);
+    document.getElementById('instructions').innerHTML = 
+      `Approaching segment ${idx + 1} of ${routeCoords.length}`;
+  }
 </script>
 
 </body>
