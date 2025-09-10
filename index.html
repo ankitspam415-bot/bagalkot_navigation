@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -47,6 +48,7 @@
     var routeCoords = [];
     var routePolyline;
     var upcomingSegment;
+    var startMarkerPlaced = false;
 
     // Load CPP route
     fetch('bagalkot_cpp_route.json')
@@ -56,9 +58,10 @@
             routePolyline = L.polyline(routeCoords, {color: 'blue'}).addTo(map);
             map.fitBounds(routePolyline.getBounds());
 
-            // Add start and end markers
-            L.marker(routeCoords[0]).addTo(map).bindPopup("Start").openPopup();
-            L.marker(routeCoords[routeCoords.length - 1]).addTo(map).bindPopup("End");
+            // Only End marker (Start will be driver’s current location)
+            L.marker(routeCoords[routeCoords.length - 1])
+                .addTo(map)
+                .bindPopup("End");
         })
         .catch(err => console.error("Error loading CPP route:", err));
 
@@ -69,6 +72,12 @@
         if (!driverMarker) {
             driverMarker = L.marker(driverLatLng).addTo(map)
                 .bindPopup("You are here").openPopup();
+
+            // Place Start marker only once (at driver’s first detected location)
+            if (!startMarkerPlaced) {
+                L.marker(driverLatLng).addTo(map).bindPopup("Start").openPopup();
+                startMarkerPlaced = true;
+            }
         } else {
             driverMarker.setLatLng(driverLatLng);
         }
